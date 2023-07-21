@@ -8,30 +8,65 @@ import HttpStatus from 'http-status-codes';
 import { v4 as uuidv4 } from 'uuid';
 import mysql from 'mysql2';
 import promisePool from '../../db';
+import axios from 'axios';
 
 const router: Router = express.Router();
 
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { user_id: userId, user_pw: userPw, autologin } = req.body;
+    const restApiKey = process.env.REST_API_KEY;
+    const uri = process.env.REDIRECT_URI;
 
-    const userPwHashed = hashPassword(userPw);
+    const {
+      code: code,
+      user_id: userId,
+      user_pw: userPw,
+      autologin,
+    } = req.body;
 
-    const [rows, _] = (await promisePool.execute(
-      `SELECT * from USER WHERE user_id='${userId}' and password_sha256='${userPwHashed}'`,
-    )) as any[];
+    var accessToken;
+    var refreshToken;
 
-    if (rows.length) {
-      // Generate access token
-      const { email, nickname } = rows[0];
-      const accessToken = genAccessToken({
-        user_id: userId,
-        email: email,
-        nickname: nickname,
-      });
+    if (code != null) {
+      const data = {
+        grant_type: 'authorization_code',
+        client_id: restApiKey,
+        redirect_uri: uri,
+        code: code,
+      };
+      const header = {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+        Authorization: 'Bearer ',
+      };
 
-      // Generate refresh token & store it in DB and cookie
-      const refreshToken = genRefreshToken();
+      const kakaoToken = await axios.post(
+        'https://kauth.kakao.com/oauth/token',
+        data,
+        { headers: header },
+      );
+
+      accessToken = kakaoToken.data.access_token;
+      refreshToken = kakaoToken.data.refresh_token;
+    } else {
+      const userPwHashed = hashPassword(userPw);
+
+      const [rows, _] = (await promisePool.execute(
+        `SELECT * from USER WHERE user_id='${userId}' and password_sha256='${userPwHashed}'`,
+      )) as any[];
+
+      if (rows.length) {
+        // Generate access token
+        const { email, nickname } = rows[0];
+        accessToken = genAccessToken({
+          user_id: userId,
+          email: email,
+          nickname: nickname,
+        });
+
+        // Generate refresh token & store it in DB and cookie
+        refreshToken = genRefreshToken();
+      }
+
       await promisePool.execute(
         `UPDATE USER SET refresh_token='${refreshToken}' WHERE user_id='${userId}';`,
       );
@@ -43,13 +78,13 @@ router.post('/login', async (req: Request, res: Response) => {
             }
           : {}),
       });
-
-      return res.status(HttpStatus.OK).json({
-        status: HttpStatus.OK,
-        message: 'login success',
-        access_token: accessToken,
-      });
     }
+
+    return res.status(HttpStatus.OK).json({
+      status: HttpStatus.OK,
+      message: 'login success',
+      access_token: accessToken,
+    });
   } catch (err) {}
 
   return res.status(HttpStatus.UNAUTHORIZED).json({
@@ -61,6 +96,7 @@ router.post('/login', async (req: Request, res: Response) => {
 router.post('/refresh', async (req: Request, res: Response) => {
   try {
     const { refresh_token: refreshToken } = req.cookies;
+    const restApiKey = process.env.REST_API_KEY;
 
     // Check refresh token on DB
     const [rows, _] = (await promisePool.execute(
