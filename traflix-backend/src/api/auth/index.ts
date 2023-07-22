@@ -34,24 +34,52 @@ router.post('/login', async (req: Request, res: Response) => {
         redirect_uri: uri,
         code: code,
       };
-      const header = {
-        'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
-        Authorization: 'Bearer ',
-      };
 
       const kakaoToken = await axios.post(
         'https://kauth.kakao.com/oauth/token',
         data,
-        { headers: header },
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+            Authorization: `Bearer `,
+          },
+        },
       );
 
       accessToken = kakaoToken.data.access_token;
       refreshToken = kakaoToken.data.refresh_token;
+
+      const kakaoUser = await axios.get(`https://kapi.kakao.com/v2/user/me`, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const kakaoEmail = kakaoUser.data.kakao_account.email;
+      const kakaoNickname = kakaoUser.data.kakao_account.profile.nickname;
+
+      // 현재 데이터 베이스가 없어서 주석처리 하지 않고 실행하면 에러 남
+      const [rows, _] = (await promisePool.execute(
+        `SELECT * from USER WHERE user_id='${kakaoEmail} and type=kakao'`,
+      )) as any[];
+
+      if (!rows.length) {
+        await promisePool.execute(
+          `INSERT INTO USER (id, user_id, password_sha256, nickname, email) VALUES ('${uuidv4()}', '${kakaoEmail}', '${null}', ${
+            kakaoNickname ? `${mysql.escape(kakaoNickname)}` : 'NULL'
+          }, ${kakaoEmail ? `'${kakaoEmail}'` : 'NULL'});`,
+        );
+      }
+
+      await promisePool.execute(
+        `UPDATE USER SET refresh_token='${refreshToken}' WHERE user_id='${userId} type=kakao';`,
+      );
     } else {
       const userPwHashed = hashPassword(userPw);
 
       const [rows, _] = (await promisePool.execute(
-        `SELECT * from USER WHERE user_id='${userId}' and password_sha256='${userPwHashed}'`,
+        `SELECT * from USER WHERE user_id='${userId}' and password_sha256='${userPwHashed} and type=auth'`,
       )) as any[];
 
       if (rows.length) {
@@ -68,17 +96,18 @@ router.post('/login', async (req: Request, res: Response) => {
       }
 
       await promisePool.execute(
-        `UPDATE USER SET refresh_token='${refreshToken}' WHERE user_id='${userId}';`,
+        `UPDATE USER SET refresh_token='${refreshToken}' WHERE user_id='${userId} type=auth';`,
       );
-      res.cookie('refresh_token', refreshToken, {
-        httpOnly: true,
-        ...(autologin
-          ? {
-              maxAge: 2592000000, // remember for 30 days
-            }
-          : {}),
-      });
     }
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      ...(autologin
+        ? {
+            maxAge: 2592000000, // remember for 30 days
+          }
+        : {}),
+    });
 
     return res.status(HttpStatus.OK).json({
       status: HttpStatus.OK,
@@ -103,20 +132,44 @@ router.post('/refresh', async (req: Request, res: Response) => {
       `SELECT * from USER WHERE refresh_token='${refreshToken}'`,
     )) as any[];
 
-    if (rows.length) {
-      const { user_id: userId, email, nickname } = rows[0];
-      const accessToken = genAccessToken({
-        user_id: userId,
-        email: email,
-        nickname: nickname,
-      });
+    var accessToken;
 
-      return res.status(HttpStatus.OK).json({
-        status: HttpStatus.OK,
-        message: 'refresh success',
-        access_token: accessToken,
-      });
+    if (rows.length) {
+      const { user_id: userId, email, nickname, type } = rows[0];
+
+      if (type == 'kakao') {
+        const data = {
+          grant_type: 'authorization_code',
+          client_id: restApiKey,
+          refresh_token: refreshToken,
+        };
+
+        const kakaoToken = await axios.post(
+          'https://kauth.kakao.com/oauth/token',
+          data,
+          {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+              Authorization: `Bearer `,
+            },
+          },
+        );
+
+        accessToken = kakaoToken.data.access_token;
+      } else {
+        accessToken = genAccessToken({
+          user_id: userId,
+          email: email,
+          nickname: nickname,
+        });
+      }
     }
+
+    return res.status(HttpStatus.OK).json({
+      status: HttpStatus.OK,
+      message: 'refresh success',
+      access_token: accessToken,
+    });
   } catch (err) {}
 
   return res.status(HttpStatus.UNAUTHORIZED).json({
