@@ -1,0 +1,10 @@
+FROM node:18
+
+WORKDIR /app
+COPY traflix-backend/ ./
+
+RUN npm install
+
+EXPOSE 8080
+
+CMD ["node", "src/app.ts"]
