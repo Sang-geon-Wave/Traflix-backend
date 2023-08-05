@@ -64,6 +64,7 @@ jobs:
 
       - name: create dotenv
         run: |
+          mkdir ./traflix-backend/src/env
           touch ./traflix-backend/src/env/.env.development
           echo "PORT=${{ secrets.PORT }}" >> ./traflix-backend/src/env/.env.development
           echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> ./traflix-backend/src/env/.env.development
