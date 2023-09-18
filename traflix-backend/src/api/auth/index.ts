@@ -5,10 +5,10 @@ import {
   hashPassword,
 } from '../../middlewares/auth';
 import HttpStatus from 'http-status-codes';
-import { v4 as uuidv4 } from 'uuid';
 import mysql from 'mysql2';
 import promisePool from '../../db';
 import axios from 'axios';
+//import { v4 as uuidv4 } from 'uuid';
 
 const router: Router = express.Router();
 
@@ -17,12 +17,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const restApiKey = process.env.REST_API_KEY;
     const uri = process.env.REDIRECT_URI;
 
-    const {
-      code: code,
-      user_id: userId,
-      user_pw: userPw,
-      autologin,
-    } = req.body;
+    const { code: code, email: email, user_pw: userPw, autologin } = req.body;
 
     var accessToken;
     var refreshToken;
@@ -59,34 +54,35 @@ router.post('/login', async (req: Request, res: Response) => {
       const kakaoEmail = kakaoUser.data.kakao_account.email;
       const kakaoNickname = kakaoUser.data.kakao_account.profile.nickname;
 
-      // 현재 데이터 베이스가 없어서 주석처리 하지 않고 실행하면 에러 남
       const [rows, _] = (await promisePool.execute(
-        `SELECT * from USER WHERE user_id='${kakaoEmail} and type=kakao'`,
+        `SELECT * from USER WHERE email='${kakaoEmail}' and is_kakao=TRUE`,
       )) as any[];
 
       if (!rows.length) {
         await promisePool.execute(
-          `INSERT INTO USER (id, user_id, password_sha256, nickname, email) VALUES ('${uuidv4()}', '${kakaoEmail}', '${null}', ${
+          `INSERT INTO USER (user_id, password, nickname, email, is_kakao, kakao_refresh_token) VALUES ('${kakaoEmail}', '${accessToken}', ${
             kakaoNickname ? `${mysql.escape(kakaoNickname)}` : 'NULL'
-          }, ${kakaoEmail ? `'${kakaoEmail}'` : 'NULL'});`,
+          }, ${
+            kakaoEmail ? `'${kakaoEmail}'` : 'NULL'
+          }, TRUE, '${refreshToken}');`,
+        );
+      } else {
+        await promisePool.execute(
+          `UPDATE USER SET kakao_refresh_token='${refreshToken}' WHERE email='${kakaoEmail}' and is_kakao=TRUE;`,
         );
       }
-
-      await promisePool.execute(
-        `UPDATE USER SET refresh_token='${refreshToken}' WHERE user_id='${userId} type=kakao';`,
-      );
     } else {
       const userPwHashed = hashPassword(userPw);
 
       const [rows, _] = (await promisePool.execute(
-        `SELECT * from USER WHERE user_id='${userId}' and password_sha256='${userPwHashed} and type=auth'`,
+        `SELECT * from USER WHERE email='${email}' and password='${userPwHashed}' and is_kakao=FALSE`,
       )) as any[];
 
       if (rows.length) {
         // Generate access token
         const { email, nickname } = rows[0];
         accessToken = genAccessToken({
-          user_id: userId,
+          user_id: email,
           email: email,
           nickname: nickname,
         });
@@ -96,7 +92,7 @@ router.post('/login', async (req: Request, res: Response) => {
       }
 
       await promisePool.execute(
-        `UPDATE USER SET refresh_token='${refreshToken}' WHERE user_id='${userId} type=auth';`,
+        `UPDATE USER SET refresh_token='${refreshToken}' WHERE email='${email}' and is_kakao=FALSE;`,
       );
     }
 
@@ -135,9 +131,19 @@ router.post('/refresh', async (req: Request, res: Response) => {
     var accessToken;
 
     if (rows.length) {
-      const { user_id: userId, email, nickname, type } = rows[0];
+      const { user_id: userId, email, nickname } = rows[0];
 
-      if (type == 'kakao') {
+      accessToken = genAccessToken({
+        user_id: userId,
+        email: email,
+        nickname: nickname,
+      });
+    } else {
+      const [rows, _] = (await promisePool.execute(
+        `SELECT * from USER WHERE kakao_refresh_token='${refreshToken}'`,
+      )) as any[];
+
+      if (rows.length) {
         const data = {
           grant_type: 'authorization_code',
           client_id: restApiKey,
@@ -156,12 +162,6 @@ router.post('/refresh', async (req: Request, res: Response) => {
         );
 
         accessToken = kakaoToken.data.access_token;
-      } else {
-        accessToken = genAccessToken({
-          user_id: userId,
-          email: email,
-          nickname: nickname,
-        });
       }
     }
 
@@ -182,9 +182,19 @@ router.post('/logout', async (req: Request, res: Response) => {
   try {
     const { refresh_token: refreshToken } = req.cookies;
     // Remove refresh_token on DB
-    await promisePool.execute(
-      `UPDATE USER SET refresh_token=NULL WHERE refresh_token='${refreshToken}';`,
-    );
+
+    const [rows, _] = (await promisePool.execute(
+      `SELECT * from USER WHERE kakao_refresh_token='${refreshToken}'`,
+    )) as any[];
+    if (rows.length) {
+      await promisePool.execute(
+        `UPDATE USER SET refresh_token=NULL WHERE refresh_token='${refreshToken}';`,
+      );
+    } else {
+      await promisePool.execute(
+        `UPDATE USER SET refresh_token=NULL WHERE kakao_refresh_token='${refreshToken}';`,
+      );
+    }
     res.clearCookie('refresh_token');
   } catch (err) {}
 
@@ -196,23 +206,21 @@ router.post('/logout', async (req: Request, res: Response) => {
 
 router.post('/signup', async (req: Request, res: Response) => {
   try {
-    const { user_id: userId, user_pw: userPw, nickname, email } = req.body;
+    const { email, user_pw: userPw, nickname } = req.body;
 
     // Validate user id & password & email
-    const idReg = /^[a-z\d]{5,16}$/;
     const passwordReg = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d!@#$]{8,16}$/;
     const nicknameReg = /.{1,30}/;
     const emailReg = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/;
     if (
-      idReg.test(userId) &&
+      emailReg.test(email) &&
       passwordReg.test(userPw) &&
-      (!nickname || nicknameReg.test(nickname)) &&
-      (!email || emailReg.test(email))
+      (!nickname || nicknameReg.test(nickname))
     ) {
       const userPwHashed = hashPassword(userPw);
 
       const [rows, _] = (await promisePool.execute(
-        `SELECT * from USER WHERE user_id='${userId}'`,
+        `SELECT * from USER WHERE email='${email}' and is_kakao=FALSE`,
       )) as any[];
 
       if (rows.length) {
@@ -223,9 +231,9 @@ router.post('/signup', async (req: Request, res: Response) => {
       }
 
       await promisePool.execute(
-        `INSERT INTO USER (id, user_id, password_sha256, nickname, email) VALUES ('${uuidv4()}', '${userId}', '${userPwHashed}', ${
+        `INSERT INTO USER (user_id, password, nickname, email, is_kakao) VALUES ('${email}', '${userPwHashed}', ${
           nickname ? `${mysql.escape(nickname)}` : 'NULL'
-        }, ${email ? `'${email}'` : 'NULL'});`,
+        }, '${email}','FALSE');`,
       );
 
       return res.status(HttpStatus.OK).json({
