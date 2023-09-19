@@ -179,12 +179,19 @@ router.post('/refresh', async (req: Request, res: Response) => {
       }
     }
 
-    return res.status(HttpStatus.OK).json({
-      status: HttpStatus.OK,
-      message: 'refresh success',
-      access_token: accessToken,
-      nickname: nick,
-    });
+    if (accessToken !== undefined) {
+      return res.status(HttpStatus.OK).json({
+        status: HttpStatus.OK,
+        message: 'refresh success',
+        access_token: accessToken,
+        nickname: nick,
+      });
+    } else {
+      return res.status(HttpStatus.UNAUTHORIZED).json({
+        status: HttpStatus.UNAUTHORIZED,
+        message: 'invalid refresh token',
+      });
+    }
   } catch (err) {}
 
   return res.status(HttpStatus.UNAUTHORIZED).json({
@@ -246,9 +253,9 @@ router.post('/signup', async (req: Request, res: Response) => {
       }
 
       await promisePool.execute(
-        `INSERT INTO USER (user_id, password, nickname, email, is_kakao) VALUES ('${email}', '${userPwHashed}', ${
-          nickname ? `${mysql.escape(nickname)}` : 'NULL'
-        }, '${email}','FALSE');`,
+        `INSERT INTO USER (user_id, password, nickname, email, is_kakao) VALUES ('${email}', '${userPwHashed}', ${mysql.escape(
+          nickname,
+        )}, '${email}','FALSE');`,
       );
 
       return res.status(HttpStatus.OK).json({
