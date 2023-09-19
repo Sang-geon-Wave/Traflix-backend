@@ -145,7 +145,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
       if (rows.length) {
         const data = {
-          grant_type: 'authorization_code',
+          grant_type: 'refresh_token',
           client_id: restApiKey,
           refresh_token: refreshToken,
         };
@@ -155,8 +155,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
           data,
           {
             headers: {
-              'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
-              Authorization: `Bearer `,
+              'Content-Type': ' application/x-www-form-urlencoded',
             },
           },
         );
