@@ -21,6 +21,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
     var accessToken;
     var refreshToken;
+    var nick;
 
     if (code != null) {
       const data = {
@@ -53,6 +54,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
       const kakaoEmail = kakaoUser.data.kakao_account.email;
       const kakaoNickname = kakaoUser.data.kakao_account.profile.nickname;
+      nick = kakaoNickname;
 
       const [rows, _] = (await promisePool.execute(
         `SELECT * from USER WHERE email='${kakaoEmail}' and is_kakao=TRUE`,
@@ -86,30 +88,40 @@ router.post('/login', async (req: Request, res: Response) => {
           email: email,
           nickname: nickname,
         });
+        refreshToken = genRefreshToken();
+
+        if (nickname == null) nick = email;
+        else nick = nickname;
 
         // Generate refresh token & store it in DB and cookie
-        refreshToken = genRefreshToken();
+        await promisePool.execute(
+          `UPDATE USER SET refresh_token='${refreshToken}' WHERE email='${email}' and is_kakao=FALSE;`,
+        );
       }
-
-      await promisePool.execute(
-        `UPDATE USER SET refresh_token='${refreshToken}' WHERE email='${email}' and is_kakao=FALSE;`,
-      );
     }
 
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      ...(autologin
-        ? {
-            maxAge: 2592000000, // remember for 30 days
-          }
-        : {}),
-    });
+    if (refreshToken !== undefined) {
+      res.cookie('refresh_token', refreshToken, {
+        httpOnly: true,
+        ...(autologin
+          ? {
+              maxAge: 2592000000, // remember for 30 days
+            }
+          : {}),
+      });
 
-    return res.status(HttpStatus.OK).json({
-      status: HttpStatus.OK,
-      message: 'login success',
-      access_token: accessToken,
-    });
+      return res.status(HttpStatus.OK).json({
+        status: HttpStatus.OK,
+        message: 'login success',
+        access_token: accessToken,
+        nickname: nick,
+      });
+    } else {
+      return res.status(HttpStatus.UNAUTHORIZED).json({
+        status: HttpStatus.UNAUTHORIZED,
+        message: 'login fail',
+      });
+    }
   } catch (err) {}
 
   return res.status(HttpStatus.UNAUTHORIZED).json({
@@ -122,6 +134,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
   try {
     const { refresh_token: refreshToken } = req.cookies;
     const restApiKey = process.env.REST_API_KEY;
+    var nick;
 
     // Check refresh token on DB
     const [rows, _] = (await promisePool.execute(
@@ -131,10 +144,11 @@ router.post('/refresh', async (req: Request, res: Response) => {
     var accessToken;
 
     if (rows.length) {
-      const { user_id: userId, email, nickname } = rows[0];
+      const { email, nickname } = rows[0];
+      nick = nickname;
 
       accessToken = genAccessToken({
-        user_id: userId,
+        user_id: email,
         email: email,
         nickname: nickname,
       });
@@ -144,6 +158,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
       )) as any[];
 
       if (rows.length) {
+        nick = rows[0].nickname;
         const data = {
           grant_type: 'refresh_token',
           client_id: restApiKey,
@@ -168,6 +183,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
       status: HttpStatus.OK,
       message: 'refresh success',
       access_token: accessToken,
+      nickname: nick,
     });
   } catch (err) {}
 
