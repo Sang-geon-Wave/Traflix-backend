@@ -5,15 +5,13 @@ import HttpStatus from 'http-status-codes';
 
 const router: Router = express.Router();
 
-router.post(
+router.get(
   '/stationName',
   authUnprotected,
   async (req: Request, res: Response) => {
     const [rows, _] = await promisePool.execute(
       'SELECT station_name, station_code FROM traflix.STATION ORDER BY station_name;',
     );
-
-    console.log(rows, _);
 
     return res.status(HttpStatus.OK).json({
       status: HttpStatus.OK,
