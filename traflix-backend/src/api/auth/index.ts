@@ -62,7 +62,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
       if (!rows.length) {
         await promisePool.execute(
-          `INSERT INTO USER (user_id, password, nickname, email, is_kakao, kakao_refresh_token) VALUES ('${kakaoEmail}', '${accessToken}', ${
+          `INSERT INTO USER (password, nickname, email, is_kakao, kakao_refresh_token) VALUES ('${accessToken}', ${
             kakaoNickname ? `${mysql.escape(kakaoNickname)}` : 'NULL'
           }, ${
             kakaoEmail ? `'${kakaoEmail}'` : 'NULL'
@@ -253,7 +253,7 @@ router.post('/signup', async (req: Request, res: Response) => {
       }
 
       await promisePool.execute(
-        `INSERT INTO USER (user_id, password, nickname, email, is_kakao) VALUES ('${email}', '${userPwHashed}', ${mysql.escape(
+        `INSERT INTO USER (password, nickname, email, is_kakao) VALUES ('${userPwHashed}', ${mysql.escape(
           nickname,
         )}, '${email}','FALSE');`,
       );
