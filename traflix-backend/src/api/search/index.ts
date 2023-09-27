@@ -34,16 +34,31 @@ router.post(
       );
 
       const content = message.data.response.body.items.item[0];
+      const contentType = content.contenttypeid;
+
+      const message2 = await axios.get(
+        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentType}&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
+      );
+
+      const { contentid, contenttypeid, ...intro } =
+        message2.data.response.body.items.item[0];
+
+      const urlRegex = /(https?:\/\/[^"]*)/gi;
+      const input = content.homepage;
+      const hompageUrl = input.match(urlRegex)[0];
+
       const detail = {
-        title: content.title,
-        tel: content.tel,
-        zipcode: content.zipcode,
-        telname: content.telname,
-        homepage: content.homepage,
+        title: content.title, // 제목
+        tel: content.tel, // 전화번호
+        zipcode: content.zipcode, // 우편번호
+        telname: content.telname, // 전화명
+        homepage: hompageUrl, // 홈페이지
         img:
           content.firstimage !== '' ? content.firstimage : content.firstimage2,
         addr: content.addr1 !== '' ? content.addr1 : content.addr2,
         overview: content.overview,
+        contentType: contenttypeid,
+        intro: intro,
       };
 
       return res.status(HttpStatus.OK).json({
