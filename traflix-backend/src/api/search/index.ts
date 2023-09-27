@@ -29,16 +29,17 @@ router.post(
     try {
       const { content_id: ContentId } = req.body;
 
-      console.log(ContentId);
-
       const message = await axios.get(
         `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
-        //'https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=2891928&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y',
       );
 
       const content = message.data.response.body.items.item[0];
       const detail = {
         title: content.title,
+        tel: content.tel,
+        zipcode: content.zipcode,
+        telname: content.telname,
+        homepage: content.homepage,
         img:
           content.firstimage !== '' ? content.firstimage : content.firstimage2,
         addr: content.addr1 !== '' ? content.addr1 : content.addr2,
