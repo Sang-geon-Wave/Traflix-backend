@@ -20,5 +20,21 @@ router.get(
     });
   },
 );
+router.get(
+  '/wholeSchedule',
+  authUnprotected,
+  async (req: Request, res: Response) => {
+    const { email: email } = req.body;
+    const [rows, _] = await promisePool.execute(
+      `SELECT * FROM traflix.JOURNEY JOIN traflix.EVENT USING(journey_id)JOIN traflix.USER WHERE traflix.JOURNEY.user_id = traflix.USER.user_idAND email = ${email}GROUP BY journey_date;`,
+    );
+
+    return res.status(HttpStatus.OK).json({
+      status: HttpStatus.OK,
+      message: 'station name query success',
+      data: rows,
+    });
+  },
+);
 
 module.exports = router;
