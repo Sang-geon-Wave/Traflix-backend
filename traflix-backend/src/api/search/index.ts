@@ -45,18 +45,19 @@ router.post(
 
       const urlRegex = /(https?:\/\/[^"]*)/gi;
       const input = content.homepage;
-      const hompageUrl = input.match(urlRegex)[0];
+      const hompageUrl = input === '' ? '정보 없음' : input.match(urlRegex)[0];
+
+      const overviewRep = content.overview.replace(/<[^>]*>?/g, '');
 
       const detail = {
-        title: content.title, // 제목
-        tel: content.tel, // 전화번호
-        zipcode: content.zipcode, // 우편번호
-        telname: content.telname, // 전화명
+        title: content.title === '' ? '정보 없음' : content.title,
+        tel: content.tel === '' ? '정보 없음' : content.tel,
+        zipcode: content.zipcode === '' ? '정보 없음' : content.zipcode,
+        telname: content.telname === '' ? '정보 없음' : content.telname,
         homepage: hompageUrl, // 홈페이지
-        img:
-          content.firstimage !== '' ? content.firstimage : content.firstimage2,
-        addr: content.addr1 !== '' ? content.addr1 : content.addr2,
-        overview: content.overview,
+        img: content.firstimage === '' ? '정보 없음' : content.firstimage,
+        addr: content.addr1 === '' ? '정보 없음' : content.addr1,
+        overview: overviewRep === '' ? '정보 없음' : overviewRep,
         contentType: contenttypeid,
         intro: intro,
       };
