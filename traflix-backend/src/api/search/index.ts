@@ -73,7 +73,7 @@ router.post(
         title: content.title,
         subtitle: '',
         load: content.addr1 !== '' ? content.addr1 : content.addr2,
-        moreInfo: '',
+        moreInfo: id,
       };
 
       return res.status(HttpStatus.OK).json({
