@@ -2,6 +2,7 @@ import express, { Request, Response, Router } from 'express';
 import promisePool from '../../db';
 import { authProtected, authUnprotected } from '../../middlewares/auth';
 import HttpStatus from 'http-status-codes';
+import axios from 'axios';
 
 const router: Router = express.Router();
 
@@ -17,6 +18,60 @@ router.get(
       status: HttpStatus.OK,
       message: 'station name query success',
       data: rows,
+    });
+  },
+);
+
+router.post(
+  '/contentDetail',
+  authUnprotected,
+  async (req: Request, res: Response) => {
+    try {
+      const { content_id: ContentId } = req.body;
+
+      const message = await axios.get(
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
+      );
+
+      const content = message.data.response.body.items.item[0];
+      const contentType = content.contenttypeid;
+
+      const message2 = await axios.get(
+        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentType}&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
+      );
+
+      const { contentid, contenttypeid, ...intro } =
+        message2.data.response.body.items.item[0];
+
+      const urlRegex = /(https?:\/\/[^"]*)/gi;
+      const input = content.homepage;
+      const hompageUrl = input === '' ? '정보 없음' : input.match(urlRegex)[0];
+
+      const overviewRep = content.overview.replace(/<[^>]*>?/g, '');
+
+      const detail = {
+        title: content.title === '' ? '정보 없음' : content.title,
+        tel: content.tel === '' ? '정보 없음' : content.tel,
+        zipcode: content.zipcode === '' ? '정보 없음' : content.zipcode,
+        telname: content.telname === '' ? '정보 없음' : content.telname,
+        homepage: hompageUrl, // 홈페이지
+        img: content.firstimage === '' ? '정보 없음' : content.firstimage,
+        addr: content.addr1 === '' ? '정보 없음' : content.addr1,
+        overview: overviewRep === '' ? '정보 없음' : overviewRep,
+        contentType: contenttypeid,
+        intro: intro,
+      };
+
+      return res.status(HttpStatus.OK).json({
+        status: HttpStatus.OK,
+        message: 'content detail information',
+        detail: detail,
+      });
+    } catch (err) {}
+
+    return res.status(HttpStatus.NOT_FOUND).json({
+      status: HttpStatus.NOT_FOUND,
+      message: 'fail load to detail',
     });
   },
 );
