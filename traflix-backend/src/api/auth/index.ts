@@ -77,14 +77,14 @@ router.post('/login', async (req: Request, res: Response) => {
       const userPwHashed = hashPassword(userPw);
 
       const [rows, _] = (await promisePool.execute(
-        `SELECT * from USER WHERE email='${email}' and password='${userPwHashed}' and is_kakao=FALSE`,
+        `SELECT bin_to_uuid(user_id, 1) AS userId, email, nickname from USER WHERE email='${email}' and password='${userPwHashed}' and is_kakao=FALSE`,
       )) as any[];
 
       if (rows.length) {
         // Generate access token
-        const { email, nickname } = rows[0];
+        const { userId, email, nickname } = rows[0];
         accessToken = genAccessToken({
-          user_id: email,
+          user_id: userId,
           email: email,
           nickname: nickname,
         });
@@ -138,17 +138,17 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
     // Check refresh token on DB
     const [rows, _] = (await promisePool.execute(
-      `SELECT * from USER WHERE refresh_token='${refreshToken}'`,
+      `SELECT bin_to_uuid(user_id, 1) AS userId, email, nickname from USER WHERE refresh_token='${refreshToken}'`,
     )) as any[];
 
     var accessToken;
 
     if (rows.length) {
-      const { email, nickname } = rows[0];
+      const { userId, email, nickname } = rows[0];
       nick = nickname;
 
       accessToken = genAccessToken({
-        user_id: email,
+        user_id: userId,
         email: email,
         nickname: nickname,
       });
