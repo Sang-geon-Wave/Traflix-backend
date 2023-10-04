@@ -59,6 +59,7 @@ router.post(
     });
   },
 );
+
 router.post(
   '/contentInfo',
   authUnprotected,
@@ -113,13 +114,33 @@ router.post(
       );
 
       const promises = (journeys as any[]).map(async (journey) => {
+        // const [events] = await promisePool.execute(
+        //   `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date,
+        // schedule_order, is_train, content_id,
+        // BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id
+        // FROM JOURNEY JOIN EVENT USING (journey_id)
+        // WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
+        // ORDER BY schedule_order`,
+        // );
         const [events] = await promisePool.execute(
           `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date, 
-        schedule_order, is_train, content_id, 
-        BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id
-        FROM JOURNEY JOIN EVENT USING (journey_id)
-        WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1) 
-        ORDER BY schedule_order`,
+          schedule_order, is_train, content_id, 
+          BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id,
+          BIN_TO_UUID(station_id,1) AS station_id,
+          station_name,
+          station_longitude,
+          station_latitude,
+          BIN_TO_UUID(train_id,1) AS train_id,
+          train_type,
+          train_number,
+          stop_time
+          FROM JOURNEY 
+          JOIN EVENT USING (journey_id) 
+      LEFT OUTER JOIN TRAIN_SCHEDULE USING(train_schedule_id)
+          LEFT OUTER JOIN STATION USING(station_id)
+      LEFT OUTER JOIN TRAIN USING(train_id)
+          WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
+          ORDER BY schedule_order`,
         );
 
         return events;
@@ -150,18 +171,15 @@ router.post(
       const { content_id: ContentId, content_type_id: contentTypeId } =
         req.body;
 
-      // const content = message.data.response.body.items.item[0];
-      // const contentType = content.contenttypeid;
-
       const message = await axios.get(
         `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
       );
 
-      const content = message.data.response.body.items.item[0];
       const message2 = await axios.get(
         `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentTypeId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
       );
 
+      const content = message.data.response.body.items.item[0];
       const { contentid, contenttypeid, ...intro } =
         message2.data.response.body.items.item[0];
 
