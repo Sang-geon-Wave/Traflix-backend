@@ -39,7 +39,7 @@ router.post(
     try {
       const { id: id } = req.body;
       const [rows] = await promisePool.execute(
-        `SELECT stop_time, station_name, train_type ,train_number 
+        `SELECT stop_time, station_name, train_type ,train_number, station_longitude, station_latitude
       FROM traflix.TRAIN_SCHEDULE 
       JOIN traflix.STATION USING(station_id)
       JOIN traflix.TRAIN USING(train_id)
@@ -66,7 +66,7 @@ router.post(
     try {
       const { id: id } = req.body;
       const info = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D`,
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D`,
       );
       const content = info.data.response.body.items.item[0];
       const returnData = {
@@ -76,6 +76,8 @@ router.post(
 
         title: content.title,
         subtitle: '',
+        mapx: content.mapx,
+        mapy: content.mapy,
         load: content.addr1 !== '' ? content.addr1 : content.addr2,
         moreInfo: id,
       };
