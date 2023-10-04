@@ -37,7 +37,6 @@ router.post('/login', async (req: Request, res: Response) => {
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
-            Authorization: `Bearer `,
           },
         },
       );
