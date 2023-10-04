@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import config from '../config';
 import HttpStatus from 'http-status-codes';
+import axios from 'axios';
+import promisePool from '../db';
 
 export interface IGetUserAuthInfoRequest extends Request {
   user?: {
@@ -31,30 +33,77 @@ export const hashPassword = (passwd: string) => {
     .digest('hex');
 };
 
-const authChecker = (
+const authChecker = async (
   req: IGetUserAuthInfoRequest,
   res: Response,
   next: NextFunction,
 ) => {
+  const accessToken = req.headers.authorization || 'noAccessToken';
   try {
-    const accessToken = req.headers.authorization!;
+    if (accessToken === 'noAccessToken') {
+      return unauthorizedResponse(res, 'access token not found');
+    }
 
     const user = jwt.verify(accessToken, config.jwt_secret);
-    const { user_id: userId, email, nickname } = user as JwtPayload;
-    req.user = {
-      userId: userId,
-      email: email,
-      nickname: nickname,
-    };
 
-    next();
-  } catch (err) {
-    return res.status(HttpStatus.UNAUTHORIZED).json({
-      status: HttpStatus.UNAUTHORIZED,
-      message: 'access token expired',
-    });
+    if (user) {
+      const { user_id: userId, email, nickname } = user as JwtPayload;
+      req.user = {
+        userId,
+        email,
+        nickname,
+      };
+      return next();
+    } else {
+      return unauthorizedResponse(res, 'access token invalid');
+    }
+  } catch (err: any) {
+    if (err.name === 'TokenExpiredError') {
+      return unauthorizedResponse(res, 'access token expired');
+    } else if (err.name === 'JsonWebTokenError') {
+      try {
+        const kakaoUser = await axios.get('https://kapi.kakao.com/v2/user/me', {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (kakaoUser.status === HttpStatus.OK) {
+          const userEmail = kakaoUser.data.kakao_account.email;
+          const [rows, _] = (await promisePool.execute(
+            `SELECT bin_to_uuid(user_id, 1) AS userId, email, nickname from USER WHERE email='${userEmail}' AND is_kakao=TRUE`,
+          )) as any[];
+
+          if (!rows.length) {
+            return unauthorizedResponse(res, 'access token invalid');
+          }
+
+          const { userId, email, nickname } = rows[0];
+          req.user = {
+            userId,
+            email,
+            nickname,
+          };
+          return next();
+        } else {
+          return unauthorizedResponse(res, 'access token invalid');
+        }
+      } catch (kakaoError) {
+        return unauthorizedResponse(res, 'Kakao API error');
+      }
+    } else {
+      return unauthorizedResponse(res, 'token auth failed');
+    }
   }
 };
+
+function unauthorizedResponse(res: Response, message: string) {
+  return res.status(HttpStatus.UNAUTHORIZED).json({
+    status: HttpStatus.UNAUTHORIZED,
+    message: message,
+  });
+}
 
 export const authProtected = [authChecker];
 export const authUnprotected: ((
