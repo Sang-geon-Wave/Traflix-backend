@@ -66,7 +66,7 @@ router.post(
     try {
       const { id: id } = req.body;
       const info = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D`,
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D`,
       );
       const content = info.data.response.body.items.item[0];
       const returnData = {
@@ -102,10 +102,14 @@ router.post(
   async (req: IGetUserAuthInfoRequest, res: Response) => {
     try {
       const userId = req.user!.userId;
+      // const [journeys] = await promisePool.execute(
+      //   `SELECT BIN_TO_UUID(journey_id,1) AS journey_id
+      // FROM JOURNEY JOIN USER USING(user_id)
+      // WHERE user_id = UUID_TO_BIN(\'${userId}\',1)`,
+      // );
       const [journeys] = await promisePool.execute(
         `SELECT BIN_TO_UUID(journey_id,1) AS journey_id 
-      FROM JOURNEY JOIN USER USING(user_id) 
-      WHERE user_id = UUID_TO_BIN(\'${userId}\',1)`,
+      FROM JOURNEY JOIN USER USING(user_id)`,
       );
 
       const promises = (journeys as any[]).map(async (journey) => {
@@ -143,17 +147,19 @@ router.post(
   authUnprotected,
   async (req: Request, res: Response) => {
     try {
-      const { content_id: ContentId } = req.body;
+      const { content_id: ContentId, content_type_id: contentTypeId } =
+        req.body;
+
+      // const content = message.data.response.body.items.item[0];
+      // const contentType = content.contenttypeid;
 
       const message = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
       );
 
       const content = message.data.response.body.items.item[0];
-      const contentType = content.contenttypeid;
-
       const message2 = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentType}&serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
+        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentTypeId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
       );
 
       const { contentid, contenttypeid, ...intro } =
@@ -183,7 +189,9 @@ router.post(
         message: 'content detail information',
         detail: detail,
       });
-    } catch (err) {}
+    } catch (err) {
+      console.error(err);
+    }
 
     return res.status(HttpStatus.NOT_FOUND).json({
       status: HttpStatus.NOT_FOUND,
