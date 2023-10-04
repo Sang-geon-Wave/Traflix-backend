@@ -1,6 +1,10 @@
 import express, { Request, Response, Router } from 'express';
 import promisePool from '../../db';
-import { authProtected, authUnprotected } from '../../middlewares/auth';
+import {
+  IGetUserAuthInfoRequest,
+  authProtected,
+  authUnprotected,
+} from '../../middlewares/auth';
 import HttpStatus from 'http-status-codes';
 import axios from 'axios';
 const router: Router = express.Router();
@@ -92,15 +96,16 @@ router.post(
 
 router.post(
   '/myJourney',
-  authUnprotected,
-  async (req: Request, res: Response) => {
+  authProtected,
+  async (req: IGetUserAuthInfoRequest, res: Response) => {
     try {
-      const { email: email } = req.body;
+      const userId = req.user!.userId;
       const [journeys] = await promisePool.execute(
         `SELECT BIN_TO_UUID(journey_id,1) AS journey_id 
       FROM JOURNEY JOIN USER USING(user_id) 
-      WHERE email = \'${email}\'`,
+      WHERE user_id = UUID_TO_BIN(\'${userId}\',1)`,
       );
+
       const promises = (journeys as any[]).map(async (journey) => {
         const [events] = await promisePool.execute(
           `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date, 
@@ -120,7 +125,9 @@ router.post(
         message: 'whole schedule query success',
         data: returnData,
       });
-    } catch (err) {}
+    } catch (err) {
+      console.error(err);
+    }
 
     return res.status(HttpStatus.NOT_FOUND).json({
       status: HttpStatus.NOT_FOUND,
