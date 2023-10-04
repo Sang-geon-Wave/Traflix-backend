@@ -76,6 +76,8 @@ router.post(
 
         title: content.title,
         subtitle: '',
+        mapx: content.mapx,
+        mapy: content.mapy,
         load: content.addr1 !== '' ? content.addr1 : content.addr2,
         moreInfo: id,
       };
