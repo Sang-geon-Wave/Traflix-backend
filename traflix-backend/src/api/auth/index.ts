@@ -205,15 +205,11 @@ router.post('/logout', async (req: Request, res: Response) => {
     // Remove refresh_token on DB
 
     const [rows, _] = (await promisePool.execute(
-      `SELECT * from USER WHERE kakao_refresh_token='${refreshToken}'`,
+      `SELECT * from USER WHERE kakao_refresh_token='${refreshToken}' or refresh_token='${refreshToken}'`,
     )) as any[];
     if (rows.length) {
       await promisePool.execute(
-        `UPDATE USER SET refresh_token=NULL WHERE refresh_token='${refreshToken}';`,
-      );
-    } else {
-      await promisePool.execute(
-        `UPDATE USER SET refresh_token=NULL WHERE kakao_refresh_token='${refreshToken}';`,
+        `UPDATE USER SET refresh_token=NULL WHERE kakao_refresh_token='${refreshToken}' or refresh_token='${refreshToken}';`,
       );
     }
     res.clearCookie('refresh_token');
