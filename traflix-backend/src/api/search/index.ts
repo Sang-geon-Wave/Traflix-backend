@@ -218,4 +218,33 @@ router.post(
   },
 );
 
+router.get(
+  '/stationInfo',
+  authUnprotected,
+  async (req: Request, res: Response) => {
+    try {
+      const { station_id: station_id } = req.body;
+
+      const [rows] = await promisePool.execute(
+        `SELECT station_longitude, station_latitude
+        FROM traflix.STATION
+        WHERE station_id = UUID_TO_BIN(\'${station_id}\',1)`,
+      );
+
+      // const message = `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${rows[0].station_longitude}&mapY=${rows[0].station_latitude}&radius=5000`
+
+      return res.status(HttpStatus.OK).json({
+        status: HttpStatus.OK,
+        message: 'station name query success',
+        data: rows,
+      });
+    } catch (err) {}
+
+    return res.status(HttpStatus.NOT_FOUND).json({
+      status: HttpStatus.NOT_FOUND,
+      message: 'fail load to station name',
+    });
+  },
+);
+
 module.exports = router;
