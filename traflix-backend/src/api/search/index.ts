@@ -219,7 +219,7 @@ router.post(
 );
 
 router.post(
-  '/stationInfo',
+  '/stationTourSpotInfo',
   authUnprotected,
   async (req: Request, res: Response) => {
     try {
@@ -249,8 +249,18 @@ router.post(
 
       (content as any[]).map((info) => {
         const t: string = info.contenttypeid;
+
         if (t in places) {
-          places[t].push(info);
+          places[t].push({
+            title: info.title,
+            contentid: info.contentid,
+            contenttypeid: info.contenttypeid,
+            firstimage: info.firstimage,
+            mapx: info.mapx,
+            mapy: info.mapy,
+            dist: info.dist,
+            addr1: info.addr1,
+          });
         }
       });
 
