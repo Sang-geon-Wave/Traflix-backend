@@ -218,7 +218,7 @@ router.post(
   },
 );
 
-router.get(
+router.post(
   '/stationInfo',
   authUnprotected,
   async (req: Request, res: Response) => {
@@ -230,19 +230,23 @@ router.get(
         FROM traflix.STATION
         WHERE station_id = UUID_TO_BIN(\'${station_id}\',1)`,
       );
+      const tmp = (rows as any[]).map((row) => row);
 
-      // const message = `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${rows[0].station_longitude}&mapY=${rows[0].station_latitude}&radius=5000`
+      const message = await axios.get(
+        `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
+      );
+      const content = message.data.response.body.items.item;
 
       return res.status(HttpStatus.OK).json({
         status: HttpStatus.OK,
-        message: 'station name query success',
-        data: rows,
+        message: 'station info success',
+        data: content,
       });
     } catch (err) {}
 
     return res.status(HttpStatus.NOT_FOUND).json({
       status: HttpStatus.NOT_FOUND,
-      message: 'fail load to station name',
+      message: 'fail load to station info',
     });
   },
 );
