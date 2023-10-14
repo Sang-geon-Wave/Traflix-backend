@@ -273,15 +273,14 @@ router.post(
         },
       );
       const content = pathDataResponse.data;
-      console.log(content.body);
-      console.log(typeof content.body);
 
       let result = [];
       for (let i = 0; i < 5; i++) {
         console.log(content.body[i]);
-        let trainresult = [];
         const tourStationName = content.body[i].TourStation;
-        for (let path of content.body[i].Path) {
+        let pathArr = content.body[i].Path;
+        let train = [];
+        for (let path of pathArr) {
           const [deptQ] = await promisePool.execute(
             `SELECT station_name, station_longitude, station_latitude
           FROM traflix.STATION
@@ -292,57 +291,66 @@ router.post(
           FROM traflix.STATION
           WHERE station_name = \'${path.ArrStation}\'`,
           );
-          trainresult.push((deptQ as RowDataPacket[])[0].station_longitude);
-          trainresult.push((arrQ as RowDataPacket[])[0].station_longitude);
-          console.log(trainresult);
+          path.DeptLong = (deptQ as RowDataPacket[])[0].station_longitude;
+          path.DeptLat = (deptQ as RowDataPacket[])[0].station_latitude;
+          path.ArrLong = (arrQ as RowDataPacket[])[0].station_longitude;
+          path.ArrLat = (arrQ as RowDataPacket[])[0].station_latitude;
+
+          train.push(path);
+          console.log(path);
         }
+
+        const [tourSpotrows] = await promisePool.execute(
+          `SELECT station_name, station_longitude, station_latitude
+          FROM traflix.STATION
+          WHERE station_name = \'${tourStationName}\'`,
+        );
+        const tourSpotTmp = (tourSpotrows as any[]).map((row) => row);
+
+        const tourSpotmessage = await axios.get(
+          `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tourSpotTmp[0].station_longitude}&mapY=${tourSpotTmp[0].station_latitude}&radius=5000`,
+        );
+
+        console.log(tourSpotmessage);
+
+        const tourSpotcontent = tourSpotmessage.data.response.body.items.item;
+        const tourSpotPlaces: { [key: string]: {}[] } = {
+          '12': [],
+          '14': [],
+          '15': [],
+          '28': [],
+          '32': [],
+          '38': [],
+          '39': [],
+        };
+
+        (tourSpotcontent as any[]).map((info) => {
+          const t: string = info.contenttypeid;
+
+          if (t in tourSpotPlaces) {
+            tourSpotPlaces[t].push({
+              title: info.title,
+              contentid: info.contentid,
+              contenttypeid: info.contenttypeid,
+              firstimage: info.firstimage,
+              mapx: info.mapx,
+              mapy: info.mapy,
+              dist: info.dist,
+              addr1: info.addr1,
+            });
+          }
+        });
+
+        result.push({
+          train: train,
+          tourSpot: tourSpotPlaces,
+        });
       }
-      // axios.get
-
-      // const [rows] = await promisePool.execute(
-      //   `SELECT station_longitude, station_latitude
-      //   FROM traflix.STATION
-      //   WHERE station_code = \'${station_code}\'`,
-      // );
-      // const tmp = (rows as any[]).map((row) => row);
-
-      // const message = await axios.get(
-      //   `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?
-      //   serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
-      // );
-
-      // const content = message.data.response.body.items.item;
-      // const places: { [key: string]: {}[] } = {
-      //   '12': [],
-      //   '14': [],
-      //   '15': [],
-      //   '28': [],
-      //   '32': [],
-      //   '38': [],
-      //   '39': [],
-      // };
-
-      // (content as any[]).map((info) => {
-      //   const t: string = info.contenttypeid;
-
-      //   if (t in places) {
-      //     places[t].push({
-      //       title: info.title,
-      //       contentid: info.contentid,
-      //       contenttypeid: info.contenttypeid,
-      //       firstimage: info.firstimage,
-      //       mapx: info.mapx,
-      //       mapy: info.mapy,
-      //       dist: info.dist,
-      //       addr1: info.addr1,
-      //     });
-      //   }
-      // });
 
       return res.status(HttpStatus.OK).json({
         status: HttpStatus.OK,
         message: 'station info success',
-        data: [],
+        data: result,
       });
     } catch (err) {
       console.error(err);
