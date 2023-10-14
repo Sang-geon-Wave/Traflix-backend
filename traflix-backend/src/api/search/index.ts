@@ -7,6 +7,7 @@ import {
 } from '../../middlewares/auth';
 import HttpStatus from 'http-status-codes';
 import axios from 'axios';
+import { RowDataPacket } from 'mysql2';
 const router: Router = express.Router();
 
 router.get(
@@ -67,8 +68,9 @@ router.post(
     try {
       const { id: id } = req.body;
       const info = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D`,
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=${process.env.GOVDATA_API_KEY}`,
       );
+      console.log(info);
       const content = info.data.response.body.items.item[0];
       const returnData = {
         travelType: content.contenttypeid,
@@ -172,11 +174,11 @@ router.post(
         req.body;
 
       const message = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=${process.env.GOVDATA_API_KEY}&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
       );
 
       const message2 = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentTypeId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
+        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentTypeId}&serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
       );
 
       const content = message.data.response.body.items.item[0];
@@ -217,6 +219,141 @@ router.post(
     });
   },
 );
+router.post(
+  '/findPath',
+  authUnprotected,
+  async (req: Request, res: Response) => {
+    try {
+      interface RequestBody {
+        station_code_dep: string;
+        station_code_arr: string;
+        datetime_dep: string;
+        taste: string;
+      }
+
+      const {
+        station_code_dep: stationCodeDep,
+        station_code_arr: stationCodeArr,
+        datetime_dep: datetimeDep,
+        taste: tasteList,
+      }: RequestBody = req.body;
+
+      console.log(req.body);
+
+      const date = new Date(datetimeDep);
+
+      const convertTime = date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      // console.log(time);
+      // 요일을 추출 (0: 일요일, 1: 월요일, ..., 6: 토요일)
+      const daysOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+      const dayOfWeek = daysOfWeek[date.getDay()];
+      // console.log(dayOfWeek);
+      // console.log(tasteList);
+      // console.log(stationCodeDep);
+      const pathDataResponse = await axios.post(
+        `https://delvlhfpab.execute-api.ap-northeast-2.amazonaws.com/default/Traflix-findPath`,
+        {
+          Dep: stationCodeDep,
+          Arr: stationCodeArr,
+          Time: convertTime,
+          Day: dayOfWeek,
+          Weight: {
+            weight_type12: tasteList.includes('12') ? 1 : 0,
+            weight_type14: tasteList.includes('14') ? 1 : 0,
+            weight_type15: tasteList.includes('15') ? 1 : 0,
+            weight_type28: tasteList.includes('28') ? 1 : 0,
+            weight_type32: tasteList.includes('32') ? 1 : 0,
+            weight_type38: tasteList.includes('38') ? 1 : 0,
+            weight_type39: tasteList.includes('39') ? 1 : 0,
+          },
+        },
+      );
+      const content = pathDataResponse.data;
+      console.log(content.body);
+      console.log(typeof content.body);
+
+      let result = [];
+      for (let i = 0; i < 5; i++) {
+        console.log(content.body[i]);
+        let trainresult = [];
+        const tourStationName = content.body[i].TourStation;
+        for (let path of content.body[i].Path) {
+          const [deptQ] = await promisePool.execute(
+            `SELECT station_name, station_longitude, station_latitude
+          FROM traflix.STATION
+          WHERE station_name = \'${path.DeptStation}\'`,
+          );
+          const [arrQ] = await promisePool.execute(
+            `SELECT station_name, station_longitude, station_latitude
+          FROM traflix.STATION
+          WHERE station_name = \'${path.ArrStation}\'`,
+          );
+          trainresult.push((deptQ as RowDataPacket[])[0].station_longitude);
+          trainresult.push((arrQ as RowDataPacket[])[0].station_longitude);
+          console.log(trainresult);
+        }
+      }
+      // axios.get
+
+      // const [rows] = await promisePool.execute(
+      //   `SELECT station_longitude, station_latitude
+      //   FROM traflix.STATION
+      //   WHERE station_code = \'${station_code}\'`,
+      // );
+      // const tmp = (rows as any[]).map((row) => row);
+
+      // const message = await axios.get(
+      //   `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?
+      //   serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
+      // );
+
+      // const content = message.data.response.body.items.item;
+      // const places: { [key: string]: {}[] } = {
+      //   '12': [],
+      //   '14': [],
+      //   '15': [],
+      //   '28': [],
+      //   '32': [],
+      //   '38': [],
+      //   '39': [],
+      // };
+
+      // (content as any[]).map((info) => {
+      //   const t: string = info.contenttypeid;
+
+      //   if (t in places) {
+      //     places[t].push({
+      //       title: info.title,
+      //       contentid: info.contentid,
+      //       contenttypeid: info.contenttypeid,
+      //       firstimage: info.firstimage,
+      //       mapx: info.mapx,
+      //       mapy: info.mapy,
+      //       dist: info.dist,
+      //       addr1: info.addr1,
+      //     });
+      //   }
+      // });
+
+      return res.status(HttpStatus.OK).json({
+        status: HttpStatus.OK,
+        message: 'station info success',
+        data: [],
+      });
+    } catch (err) {
+      console.error(err);
+    }
+
+    return res.status(HttpStatus.NOT_FOUND).json({
+      status: HttpStatus.NOT_FOUND,
+      message: 'fail load to station info',
+    });
+  },
+);
 
 router.post(
   '/stationTourSpotInfo',
@@ -233,7 +370,8 @@ router.post(
       const tmp = (rows as any[]).map((row) => row);
 
       const message = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
+        `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?
+        serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
       );
 
       const content = message.data.response.body.items.item;
