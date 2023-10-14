@@ -223,24 +223,41 @@ router.post(
   authUnprotected,
   async (req: Request, res: Response) => {
     try {
-      const { station_id: station_id } = req.body;
+      const { station_code: station_code } = req.body;
 
       const [rows] = await promisePool.execute(
         `SELECT station_longitude, station_latitude
         FROM traflix.STATION
-        WHERE station_id = UUID_TO_BIN(\'${station_id}\',1)`,
+        WHERE station_code = \'${station_code}\'`,
       );
       const tmp = (rows as any[]).map((row) => row);
 
       const message = await axios.get(
         `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
       );
+
       const content = message.data.response.body.items.item;
+      const places: { [key: string]: {}[] } = {
+        '12': [],
+        '14': [],
+        '15': [],
+        '28': [],
+        '32': [],
+        '38': [],
+        '39': [],
+      };
+
+      (content as any[]).map((info) => {
+        const t: string = info.contenttypeid;
+        if (t in places) {
+          places[t].push(info);
+        }
+      });
 
       return res.status(HttpStatus.OK).json({
         status: HttpStatus.OK,
         message: 'station info success',
-        data: content,
+        data: places,
       });
     } catch (err) {}
 
