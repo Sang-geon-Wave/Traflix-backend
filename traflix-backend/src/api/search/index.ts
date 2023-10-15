@@ -7,6 +7,7 @@ import {
 } from '../../middlewares/auth';
 import HttpStatus from 'http-status-codes';
 import axios from 'axios';
+import { RowDataPacket } from 'mysql2';
 const router: Router = express.Router();
 
 router.get(
@@ -67,7 +68,7 @@ router.post(
     try {
       const { id: id } = req.body;
       const info = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D`,
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=${process.env.GOVDATA_API_KEY}`,
       );
       const content = info.data.response.body.items.item[0];
       const returnData = {
@@ -172,11 +173,11 @@ router.post(
         req.body;
 
       const message = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
+        `https://apis.data.go.kr/B551011/KorService1/detailCommon1?ContentId=${ContentId}&serviceKey=${process.env.GOVDATA_API_KEY}&MobileOS=WIN&MobileApp=Traflix&_type=json&firstImageYN=Y&defaultYN=Y&overviewYN=Y&addrinfoYN=Y&areacodeYN=Y&overviewYN=Y&mapinfoYN=Y`,
       );
 
       const message2 = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentTypeId}&serviceKey=OC0uqJQwzJhu4t7hhoeG1ysO%2BrSr86H9hExeVAEZ%2FYleNrlHnksGreuQfRqofupvv%2BqvOW8%2B%2FwnC5IW8mzOIjQ%3D%3D&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
+        `https://apis.data.go.kr/B551011/KorService1/detailIntro1?contentId=${ContentId}&contentTypeId=${contentTypeId}&serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=10&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json`,
       );
 
       const content = message.data.response.body.items.item[0];
@@ -217,6 +218,260 @@ router.post(
     });
   },
 );
+router.post(
+  '/findPath',
+  authUnprotected,
+  async (req: Request, res: Response) => {
+    try {
+      interface RequestBody {
+        station_code_dep: string;
+        station_code_arr: string;
+        datetime_dep: string;
+        taste: string[];
+      }
+
+      const {
+        station_code_dep: stationCodeDep,
+        station_code_arr: stationCodeArr,
+        datetime_dep: datetimeDep,
+        taste: tasteList,
+      }: RequestBody = req.body;
+
+      const date = new Date(datetimeDep);
+
+      const convertTime = date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+
+      const startdata = datetimeDep.substring(0, 10);
+
+      // 요일을 추출 (0: 일요일, 1: 월요일, ..., 6: 토요일)
+      const daysOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+      const dayOfWeek = daysOfWeek[date.getDay()];
+      const pathDataResponse = await axios.post(
+        `https://delvlhfpab.execute-api.ap-northeast-2.amazonaws.com/default/Traflix-findPath`,
+        {
+          Dep: stationCodeDep,
+          Arr: stationCodeArr,
+          Time: convertTime,
+          Day: dayOfWeek,
+          Weight: {
+            weight_type12: tasteList.includes('12') ? 1 : 0,
+            weight_type14: tasteList.includes('14') ? 1 : 0,
+            weight_type15: tasteList.includes('15') ? 1 : 0,
+            weight_type28: tasteList.includes('28') ? 1 : 0,
+            weight_type32: tasteList.includes('32') ? 1 : 0,
+            weight_type38: tasteList.includes('38') ? 1 : 0,
+            weight_type39: tasteList.includes('39') ? 1 : 0,
+          },
+        },
+      );
+      const content = pathDataResponse.data;
+
+      let result = [];
+      for (let i = 0; i < 5; i++) {
+        const tourStationName = content.body[i].TourStation;
+        let pathArr = content.body[i].Path;
+        let train = [];
+        for (let path of pathArr) {
+          const [deptQ] = await promisePool.execute(
+            `SELECT station_name, station_longitude, station_latitude
+          FROM traflix.STATION
+          WHERE station_name = \'${path.DeptStation}\'`,
+          );
+          const [arrQ] = await promisePool.execute(
+            `SELECT station_name, station_longitude, station_latitude
+          FROM traflix.STATION
+          WHERE station_name = \'${path.ArrStation}\'`,
+          );
+          path.DeptLong = (deptQ as RowDataPacket[])[0].station_longitude;
+          path.DeptLat = (deptQ as RowDataPacket[])[0].station_latitude;
+          path.ArrLong = (arrQ as RowDataPacket[])[0].station_longitude;
+          path.ArrLat = (arrQ as RowDataPacket[])[0].station_latitude;
+
+          train.push(path);
+        }
+
+        const [tourSpotrows] = await promisePool.execute(
+          `SELECT station_name, station_longitude, station_latitude
+          FROM traflix.STATION
+          WHERE station_name = \'${tourStationName}\'`,
+        );
+        const tourSpotTmp = (tourSpotrows as any[]).map((row) => row);
+
+        const tourSpotmessage = await axios.get(
+          `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tourSpotTmp[0].station_longitude}&mapY=${tourSpotTmp[0].station_latitude}&radius=5000`,
+        );
+
+        const tourSpotcontent = tourSpotmessage.data.response.body.items.item;
+        const tourSpotPlaces: { [key: string]: {}[] } = {
+          '12': [],
+          '14': [],
+          '15': [],
+          '28': [],
+          '32': [],
+          '38': [],
+          '39': [],
+        };
+
+        (tourSpotcontent as any[]).map((info) => {
+          const t: string = info.contenttypeid;
+
+          if (t in tourSpotPlaces) {
+            tourSpotPlaces[t].push({
+              title: info.title,
+              contentid: info.contentid,
+              contenttypeid: info.contenttypeid,
+              firstimage: info.firstimage,
+              mapx: info.mapx,
+              mapy: info.mapy,
+              dist: info.dist,
+              addr1: info.addr1,
+            });
+          }
+        });
+
+        const divideToureSpot: any[][] = [];
+        if (tasteList.length !== 0) {
+          if (tasteList.length > 3) {
+            tasteList.map((taste: string) => {
+              divideToureSpot.push(tourSpotPlaces[taste].slice(0, 1));
+            });
+          } else if (tasteList.length == 3) {
+            tasteList.map((taste: string) => {
+              divideToureSpot.push(tourSpotPlaces[taste].slice(0, 2));
+            });
+          } else {
+            tasteList.map((taste: string) => {
+              divideToureSpot.push(tourSpotPlaces[taste].slice(0, 3));
+            });
+          }
+        } else {
+          var tasteSelect: string[] = [
+            '12',
+            '14',
+            '15',
+            '28',
+            '32',
+            '38',
+            '39',
+          ];
+          tasteSelect.map((taste: string) => {
+            divideToureSpot.push(tourSpotPlaces[taste].slice(0, 1));
+          });
+        }
+
+        var cnt = 0;
+        const route = [];
+
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[0].DeptLat,
+          station_longitude: train[0].DeptLong,
+          station_name: train[0].DeptStation,
+          stop_time: train[0].DeptTime,
+          train_id: null,
+          train_number: train[0].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[0].TrainType,
+        });
+        cnt++;
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[0].ArrLat,
+          station_longitude: train[0].ArrLong,
+          station_name: train[0].ArrStation,
+          stop_time: train[0].ArrTime,
+          train_id: null,
+          train_number: train[0].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[0].TrainType,
+        });
+        cnt++;
+
+        for (let j = 0; j < divideToureSpot.length; j++) {
+          divideToureSpot[j].map((contents) => {
+            route.push({
+              content_id: contents.contentid,
+              is_train: 0,
+              journey_date: startdata,
+              schedule_order: cnt,
+              station_id: null,
+              station_latitude: null,
+              station_longitude: null,
+              station_name: null,
+              stop_time: null,
+              train_id: null,
+              train_number: null,
+              train_schedule_id: null,
+              train_type: null,
+              content: contents,
+            });
+            cnt++;
+          });
+        }
+
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[1].DeptLat,
+          station_longitude: train[1].DeptLong,
+          station_name: train[1].DeptStation,
+          stop_time: train[1]['DeptTime'],
+          train_id: null,
+          train_number: train[1].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[1].TrainType,
+        });
+        cnt++;
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[1].ArrLat,
+          station_longitude: train[1].ArrLong,
+          station_name: train[1].ArrStation,
+          stop_time: train[1].ArrTime,
+          train_id: null,
+          train_number: train[1].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[0].TrainType,
+        });
+        cnt++;
+
+        result.push(route);
+      }
+
+      return res.status(HttpStatus.OK).json({
+        status: HttpStatus.OK,
+        message: 'station info success',
+        data: result,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+
+    return res.status(HttpStatus.NOT_FOUND).json({
+      status: HttpStatus.NOT_FOUND,
+      message: 'fail load to station info',
+    });
+  },
+);
 
 router.post(
   '/stationTourSpotInfo',
@@ -233,7 +488,8 @@ router.post(
       const tmp = (rows as any[]).map((row) => row);
 
       const message = await axios.get(
-        `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=mRCjfx%2BzLMfb%2BHlosj2iGII4%2BCNjakj51fc6DJbyyruQdovWvNxP3se8%2B%2Bcqyc6cbPqwK%2B5q3xL0cAzwo%2BaO6A%3D%3D&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
+        `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?
+        serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tmp[0].station_longitude}&mapY=${tmp[0].station_latitude}&radius=5000`,
       );
 
       const content = message.data.response.body.items.item;
