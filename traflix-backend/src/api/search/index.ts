@@ -399,8 +399,8 @@ router.post(
         });
         cnt++;
 
-        for (i = 0; i < divideToureSpot.length; i++) {
-          divideToureSpot[i].map((contents) => {
+        for (let j = 0; j < divideToureSpot.length; j++) {
+          divideToureSpot[j].map((contents) => {
             route.push({
               content_id: contents.contentid,
               is_train: 0,
@@ -415,6 +415,7 @@ router.post(
               train_number: null,
               train_schedule_id: null,
               train_type: null,
+              content: contents,
             });
             cnt++;
           });
