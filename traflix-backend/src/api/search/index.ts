@@ -70,7 +70,6 @@ router.post(
       const info = await axios.get(
         `https://apis.data.go.kr/B551011/KorService1/detailCommon1?MobileOS=WIN&MobileApp=Traflix&_type=json&contentId=${id}&defaultYN=Y&mapinfoYN=Y&firstImageYN=Y&addrinfoYN=Y&overviewYN=Y&serviceKey=${process.env.GOVDATA_API_KEY}`,
       );
-      console.log(info);
       const content = info.data.response.body.items.item[0];
       const returnData = {
         travelType: content.contenttypeid,
@@ -228,7 +227,7 @@ router.post(
         station_code_dep: string;
         station_code_arr: string;
         datetime_dep: string;
-        taste: string;
+        taste: string[];
       }
 
       const {
@@ -238,8 +237,6 @@ router.post(
         taste: tasteList,
       }: RequestBody = req.body;
 
-      console.log(req.body);
-
       const date = new Date(datetimeDep);
 
       const convertTime = date.toLocaleTimeString('en-US', {
@@ -247,13 +244,12 @@ router.post(
         minute: '2-digit',
         hour12: false,
       });
-      // console.log(time);
+
+      const startdata = datetimeDep.substring(0, 10);
+
       // 요일을 추출 (0: 일요일, 1: 월요일, ..., 6: 토요일)
       const daysOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
       const dayOfWeek = daysOfWeek[date.getDay()];
-      // console.log(dayOfWeek);
-      // console.log(tasteList);
-      // console.log(stationCodeDep);
       const pathDataResponse = await axios.post(
         `https://delvlhfpab.execute-api.ap-northeast-2.amazonaws.com/default/Traflix-findPath`,
         {
@@ -276,7 +272,6 @@ router.post(
 
       let result = [];
       for (let i = 0; i < 5; i++) {
-        console.log(content.body[i]);
         const tourStationName = content.body[i].TourStation;
         let pathArr = content.body[i].Path;
         let train = [];
@@ -297,7 +292,6 @@ router.post(
           path.ArrLat = (arrQ as RowDataPacket[])[0].station_latitude;
 
           train.push(path);
-          console.log(path);
         }
 
         const [tourSpotrows] = await promisePool.execute(
@@ -310,8 +304,6 @@ router.post(
         const tourSpotmessage = await axios.get(
           `https://apis.data.go.kr/B551011/KorService1/locationBasedList1?serviceKey=${process.env.GOVDATA_API_KEY}&numOfRows=4000&pageNo=1&MobileOS=WIN&MobileApp=Traflix&_type=json&listYN=Y&arrange=O&mapX=${tourSpotTmp[0].station_longitude}&mapY=${tourSpotTmp[0].station_latitude}&radius=5000`,
         );
-
-        console.log(tourSpotmessage);
 
         const tourSpotcontent = tourSpotmessage.data.response.body.items.item;
         const tourSpotPlaces: { [key: string]: {}[] } = {
@@ -341,10 +333,127 @@ router.post(
           }
         });
 
-        result.push({
-          train: train,
-          tourSpot: tourSpotPlaces,
+        const divideToureSpot: any[][] = [];
+        if (tasteList.length !== 0) {
+          if (tasteList.length > 3) {
+            tasteList.map((taste: string) => {
+              divideToureSpot.push(tourSpotPlaces[taste].slice(0, 1));
+            });
+          } else if (tasteList.length == 3) {
+            tasteList.map((taste: string) => {
+              divideToureSpot.push(tourSpotPlaces[taste].slice(0, 2));
+            });
+          } else {
+            tasteList.map((taste: string) => {
+              divideToureSpot.push(tourSpotPlaces[taste].slice(0, 3));
+            });
+          }
+        } else {
+          var tasteSelect: string[] = [
+            '12',
+            '14',
+            '15',
+            '28',
+            '32',
+            '38',
+            '39',
+          ];
+          tasteSelect.map((taste: string) => {
+            divideToureSpot.push(tourSpotPlaces[taste].slice(0, 1));
+          });
+        }
+
+        var cnt = 0;
+        const route = [];
+
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[0].DeptLat,
+          station_longitude: train[0].DeptLong,
+          station_name: train[0].DeptStation,
+          stop_time: train[0].DeptTime,
+          train_id: null,
+          train_number: train[0].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[0].TrainType,
         });
+        cnt++;
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[0].ArrLat,
+          station_longitude: train[0].ArrLong,
+          station_name: train[0].ArrStation,
+          stop_time: train[0].ArrTime,
+          train_id: null,
+          train_number: train[0].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[0].TrainType,
+        });
+        cnt++;
+
+        for (i = 0; i < divideToureSpot.length; i++) {
+          divideToureSpot[i].map((contents) => {
+            route.push({
+              content_id: contents.contentid,
+              is_train: 0,
+              journey_date: startdata,
+              schedule_order: cnt,
+              station_id: null,
+              station_latitude: null,
+              station_longitude: null,
+              station_name: null,
+              stop_time: null,
+              train_id: null,
+              train_number: null,
+              train_schedule_id: null,
+              train_type: null,
+            });
+            cnt++;
+          });
+        }
+
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[1].DeptLat,
+          station_longitude: train[1].DeptLong,
+          station_name: train[1].DeptStation,
+          stop_time: train[1]['DeptTime'],
+          train_id: null,
+          train_number: train[1].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[1].TrainType,
+        });
+        cnt++;
+        route.push({
+          content_id: '',
+          is_train: 1,
+          journey_date: startdata,
+          schedule_order: cnt,
+          station_id: null,
+          station_latitude: train[1].ArrLat,
+          station_longitude: train[1].ArrLong,
+          station_name: train[1].ArrStation,
+          stop_time: train[1].ArrTime,
+          train_id: null,
+          train_number: train[1].TrainNumber,
+          train_schedule_id: null,
+          train_type: train[0].TrainType,
+        });
+        cnt++;
+
+        result.push(route);
       }
 
       return res.status(HttpStatus.OK).json({
