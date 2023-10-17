@@ -6,9 +6,13 @@ import {
   authUnprotected,
 } from '../../middlewares/auth';
 import HttpStatus from 'http-status-codes';
-import axios from 'axios';
+import Axios from 'axios';
+
 import { RowDataPacket } from 'mysql2';
+import { setupCache } from 'axios-cache-interceptor';
 const router: Router = express.Router();
+
+const axios = setupCache(Axios);
 
 router.get(
   '/stationName',
