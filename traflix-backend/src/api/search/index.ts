@@ -9,6 +9,7 @@ import HttpStatus from 'http-status-codes';
 import Axios from 'axios';
 
 import { RowDataPacket } from 'mysql2';
+import { v4 as uuidv4 } from 'uuid';
 import { setupCache } from 'axios-cache-interceptor';
 const router: Router = express.Router();
 
@@ -44,7 +45,7 @@ router.post(
     try {
       const { id: id } = req.body;
       const [rows] = await promisePool.execute(
-        `SELECT stop_time, station_name, train_type ,train_number, station_longitude, station_latitude
+        `SELECT stop_time, station_name, train_type,train_number, station_longitude, station_latitude
       FROM traflix.TRAIN_SCHEDULE 
       JOIN traflix.STATION USING(station_id)
       JOIN traflix.TRAIN USING(train_id)
@@ -222,6 +223,7 @@ router.post(
     });
   },
 );
+
 router.post(
   '/findPath',
   authUnprotected,
@@ -535,6 +537,93 @@ router.post(
       status: HttpStatus.NOT_FOUND,
       message: 'fail load to station info',
     });
+  },
+);
+
+router.post(
+  '/saveJourney',
+  authProtected,
+  async (req: IGetUserAuthInfoRequest, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const { summaryData: summaryData, cardData: cardData } = req.body;
+      const journeyDate = summaryData.journeyDate;
+      // console.log(userId);
+      console.log(summaryData);
+      // console.log(cardData);
+      const connection = await promisePool.getConnection();
+
+      const [arrivalStationRows] = await connection.execute(
+        `
+      SELECT BIN_TO_UUID(station_id, 1) AS station_id
+      FROM traflix.STATION
+      WHERE station_name = ?
+      `,
+        [summaryData.summaryData.at(0).place],
+      );
+
+      const arrivalStationId = (arrivalStationRows as any)[0].station_id;
+      console.log(arrivalStationId);
+      // departure_station_id를 가져오는 쿼리
+      const [departureStationRows] = await connection.execute(
+        `
+      SELECT BIN_TO_UUID(station_id, 1) AS station_id
+      FROM traflix.STATION
+      WHERE station_name = ?
+      `,
+        [summaryData.summaryData.at(-1).place],
+      );
+
+      const departureStationId = (departureStationRows as any)[0].station_id;
+      console.log(departureStationId);
+      const journeyId = uuidv4();
+      const [rows] = await connection.execute(
+        `
+        INSERT INTO traflix.JOURNEY
+        (journey_id, user_id, journey_date, journey_theme, arrival_station_id, departure_station_id)
+        VALUES (UUID_TO_BIN(?, 1), UUID_TO_BIN(?, 1), ?, ?, UUID_TO_BIN(?,1), UUID_TO_BIN(?,1))
+      `,
+        [
+          journeyId,
+          userId,
+          journeyDate,
+          {},
+          arrivalStationId,
+          departureStationId,
+        ],
+      );
+
+      // 반복문 돌려서 넣기
+      //   await connection.execute(
+      //     `
+      //   INSERT INTO traflix.EVENT
+      //   (event_id, user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id)
+      //   VALUES (?, ?, ?, ?, ?, ?, ?)
+      // `,
+      //     [
+      //       event_id,
+      //       user_id,
+      //       journey_id,
+      //       schedule_order,
+      //       is_train,
+      //       content_id,
+      //       train_schedule_id,
+      //     ],
+      //   );
+
+      connection.release();
+
+      return res.status(HttpStatus.CREATED).json({
+        status: HttpStatus.CREATED,
+        message: 'save journey query success',
+      });
+    } catch (err) {
+      console.log(err);
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'fail post to save journey',
+      });
+    }
   },
 );
 
