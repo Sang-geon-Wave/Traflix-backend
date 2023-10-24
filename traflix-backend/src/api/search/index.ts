@@ -618,10 +618,6 @@ router.post(
         ) => {
           if (data.isTrain) {
             const stationId = uuidv4();
-            await connection.execute(
-              `INSERT INTO traflix.EVENT (user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id) VALUES (UUID_TO_BIN("${userId}", 1), UUID_TO_BIN("${journeyId}", 1), ${index}, 1, '${''}', (UUID_TO_BIN("${stationId}", 1))`,
-            );
-
             const trainNumber = data.trainNumber;
             const [trainRows] = await connection.execute(
               `SELECT BIN_TO_UUID(train_id, 1) AS train_id FROM traflix.TRAIN WHERE train_number = ${trainNumber}`,
@@ -638,6 +634,9 @@ router.post(
                 `INSERT INTO traflix.TRAIN_SCHEDULE (train_schedule_id, train_id, departure_station_id, arrival_station_id, departure_time, arrival_time) VALUES (UUID_TO_BIN("${stationId}", 1), UUID_TO_BIN("${trainId}", 1), UUID_TO_BIN("${departureStationId}", 1), UUID_TO_BIN("${midStationId}", 1), "${data.departureTime}", "${data.arrivalTime}")`,
               );
             }
+            await connection.execute(
+              `INSERT INTO traflix.EVENT (user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id) VALUES (UUID_TO_BIN("${userId}", 1), UUID_TO_BIN("${journeyId}", 1), ${index}, 1, '${''}', UUID_TO_BIN("${stationId}", 1))`,
+            );
           } else {
             const [rows] = await connection.execute(
               `INSERT INTO traflix.EVENT (user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id) VALUES (UUID_TO_BIN("${userId}", 1), UUID_TO_BIN("${journeyId}", 1), ${index}, 0, "${
