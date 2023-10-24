@@ -94,7 +94,9 @@ router.post(
         message: 'content info query success',
         data: returnData,
       });
-    } catch (err) {}
+    } catch (err) {
+      console.error(err);
+    }
 
     return res.status(HttpStatus.NOT_FOUND).json({
       status: HttpStatus.NOT_FOUND,
@@ -115,29 +117,34 @@ router.post(
       // WHERE user_id = UUID_TO_BIN(\'${userId}\',1)`,
       // );
       const [journeys] = await promisePool.execute(
-        `SELECT BIN_TO_UUID(journey_id,1) AS journey_id 
+        `SELECT BIN_TO_UUID(journey_id, 1) AS journey_id 
       FROM JOURNEY JOIN USER USING(user_id)`,
       );
 
       const promises = (journeys as any[]).map(async (journey) => {
         const [events] = await promisePool.execute(
-          `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date, 
-            schedule_order, is_train, content_id, 
-            BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id,
-            BIN_TO_UUID(station_id,1) AS station_id,
-            station_name,
-            station_longitude,
-            station_latitude,
-            BIN_TO_UUID(train_id,1) AS train_id,
-            train_type,
-            EVENT.train_number,
-            stop_time
-          FROM JOURNEY 
-            JOIN EVENT USING (journey_id) 
-            LEFT OUTER JOIN TRAIN_SCHEDULE USING(train_schedule_id)
-            LEFT OUTER JOIN STATION USING(station_id)
-            LEFT OUTER JOIN TRAIN USING(train_id)
-          WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
+          `SELECT
+          DATE_FORMAT(J.journey_date,'%Y-%m-%d') AS journey_date, 
+          E.schedule_order,
+          E.is_train,
+          E.content_id,
+          SD.station_name AS departure_station_name,
+          SD.station_longitude AS departure_station_longitude,
+          SD.station_latitude AS departure_station_latitude,
+          TS.departure_time,
+          SA.station_name AS arrival_station_name,
+          SA.station_longitude AS arrival_station_longitude,
+          SA.station_latitude AS arrival_station_latitude,
+          TS.arrival_time,
+          T.train_type,
+          T.train_number
+          FROM traflix.JOURNEY J
+          JOIN traflix.EVENT E ON J.journey_id = E.journey_id
+          LEFT OUTER JOIN traflix.TRAIN_SCHEDULE TS ON E.train_schedule_id = TS.train_schedule_id
+          LEFT OUTER JOIN traflix.STATION SD ON SD.station_id = TS.departure_station_id
+          LEFT OUTER JOIN traflix.STATION SA ON SA.station_id = TS.arrival_station_id
+          LEFT OUTER JOIN traflix.TRAIN T ON T.train_id = TS.train_id
+          WHERE J.journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
           ORDER BY schedule_order`,
         );
 
