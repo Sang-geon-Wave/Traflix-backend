@@ -120,31 +120,23 @@ router.post(
       );
 
       const promises = (journeys as any[]).map(async (journey) => {
-        // const [events] = await promisePool.execute(
-        //   `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date,
-        // schedule_order, is_train, content_id,
-        // BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id
-        // FROM JOURNEY JOIN EVENT USING (journey_id)
-        // WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
-        // ORDER BY schedule_order`,
-        // );
         const [events] = await promisePool.execute(
           `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date, 
-          schedule_order, is_train, content_id, 
-          BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id,
-          BIN_TO_UUID(station_id,1) AS station_id,
-          station_name,
-          station_longitude,
-          station_latitude,
-          BIN_TO_UUID(train_id,1) AS train_id,
-          train_type,
-          train_number,
-          stop_time
+            schedule_order, is_train, content_id, 
+            BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id,
+            BIN_TO_UUID(station_id,1) AS station_id,
+            station_name,
+            station_longitude,
+            station_latitude,
+            BIN_TO_UUID(train_id,1) AS train_id,
+            train_type,
+            EVENT.train_number,
+            stop_time
           FROM JOURNEY 
-          JOIN EVENT USING (journey_id) 
-      LEFT OUTER JOIN TRAIN_SCHEDULE USING(train_schedule_id)
-          LEFT OUTER JOIN STATION USING(station_id)
-      LEFT OUTER JOIN TRAIN USING(train_id)
+            JOIN EVENT USING (journey_id) 
+            LEFT OUTER JOIN TRAIN_SCHEDULE USING(train_schedule_id)
+            LEFT OUTER JOIN STATION USING(station_id)
+            LEFT OUTER JOIN TRAIN USING(train_id)
           WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
           ORDER BY schedule_order`,
         );
@@ -548,12 +540,16 @@ router.post(
       const userId = req.user!.userId;
       const { summaryData: summaryData, cardData: cardData } = req.body;
       const journeyDate = summaryData.journeyDate;
-      // console.log(userId);
-      console.log(summaryData);
+
+      // 데이터 미리보기
+      // console.log(`summary`);
+      // console.log(summaryData);
       // console.log(cardData);
+
       const connection = await promisePool.getConnection();
 
-      const [arrivalStationRows] = await connection.execute(
+      // 출발역 uuid
+      const [departureStationRows] = await connection.execute(
         `
       SELECT BIN_TO_UUID(station_id, 1) AS station_id
       FROM traflix.STATION
@@ -561,11 +557,23 @@ router.post(
       `,
         [summaryData.summaryData.at(0).place],
       );
+      const departureStationId = (departureStationRows as any)[0].station_id;
+      console.log(departureStationId);
 
-      const arrivalStationId = (arrivalStationRows as any)[0].station_id;
-      console.log(arrivalStationId);
-      // departure_station_id를 가져오는 쿼리
-      const [departureStationRows] = await connection.execute(
+      // 경유역 uuid
+      const [midStationRows] = await connection.execute(
+        `
+      SELECT BIN_TO_UUID(station_id, 1) AS station_id
+      FROM traflix.STATION
+      WHERE station_name = ?
+      `,
+        [summaryData.summaryData.at(1).place],
+      );
+      const midStationId = (midStationRows as any)[0].station_id;
+      console.log(midStationId);
+
+      // 도착역 uuid
+      const [arrivalStationRows] = await connection.execute(
         `
       SELECT BIN_TO_UUID(station_id, 1) AS station_id
       FROM traflix.STATION
@@ -573,9 +581,9 @@ router.post(
       `,
         [summaryData.summaryData.at(-1).place],
       );
+      const arrivalStationId = (arrivalStationRows as any)[0].station_id;
+      console.log(arrivalStationId);
 
-      const departureStationId = (departureStationRows as any)[0].station_id;
-      console.log(departureStationId);
       const journeyId = uuidv4();
       const [rows] = await connection.execute(
         `
@@ -593,24 +601,52 @@ router.post(
         ],
       );
 
-      // 반복문 돌려서 넣기
-      //   await connection.execute(
-      //     `
-      //   INSERT INTO traflix.EVENT
-      //   (event_id, user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id)
-      //   VALUES (?, ?, ?, ?, ?, ?, ?)
-      // `,
-      //     [
-      //       event_id,
-      //       user_id,
-      //       journey_id,
-      //       schedule_order,
-      //       is_train,
-      //       content_id,
-      //       train_schedule_id,
-      //     ],
-      //   );
+      var flag = false;
 
+      cardData.map(
+        async (
+          data: {
+            isTrain: boolean;
+            moreInfo: string;
+            trainNumber: number;
+            departureStation: string;
+            arrivalStation: string;
+            departureTime: string;
+            arrivalTime: string;
+          },
+          index: number,
+        ) => {
+          if (data.isTrain) {
+            const stationId = uuidv4();
+            await connection.execute(
+              `INSERT INTO traflix.EVENT (user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id) VALUES (UUID_TO_BIN("${userId}", 1), UUID_TO_BIN("${journeyId}", 1), ${index}, 1, '${''}', (UUID_TO_BIN("${stationId}", 1))`,
+            );
+
+            const trainNumber = data.trainNumber;
+            const [trainRows] = await connection.execute(
+              `SELECT BIN_TO_UUID(train_id, 1) AS train_id FROM traflix.TRAIN WHERE train_number = ${trainNumber}`,
+            );
+            const trainId = (trainRows as any)[0].train_id;
+
+            if (flag) {
+              await connection.execute(
+                `INSERT INTO traflix.TRAIN_SCHEDULE (train_schedule_id, train_id, departure_station_id, arrival_station_id, departure_time, arrival_time) VALUES (UUID_TO_BIN("${stationId}", 1), UUID_TO_BIN("${trainId}", 1), UUID_TO_BIN("${midStationId}", 1), UUID_TO_BIN("${arrivalStationId}", 1), "${data.departureTime}", "${data.arrivalTime}")`,
+              );
+            } else {
+              flag = true;
+              await connection.execute(
+                `INSERT INTO traflix.TRAIN_SCHEDULE (train_schedule_id, train_id, departure_station_id, arrival_station_id, departure_time, arrival_time) VALUES (UUID_TO_BIN("${stationId}", 1), UUID_TO_BIN("${trainId}", 1), UUID_TO_BIN("${departureStationId}", 1), UUID_TO_BIN("${midStationId}", 1), "${data.departureTime}", "${data.arrivalTime}")`,
+              );
+            }
+          } else {
+            const [rows] = await connection.execute(
+              `INSERT INTO traflix.EVENT (user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id) VALUES (UUID_TO_BIN("${userId}", 1), UUID_TO_BIN("${journeyId}", 1), ${index}, 0, "${
+                data.moreInfo
+              }", ${null})`,
+            );
+          }
+        },
+      );
       connection.release();
 
       return res.status(HttpStatus.CREATED).json({
