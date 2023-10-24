@@ -9,6 +9,7 @@ import HttpStatus from 'http-status-codes';
 import Axios from 'axios';
 
 import { RowDataPacket } from 'mysql2';
+import { v4 as uuidv4 } from 'uuid';
 import { setupCache } from 'axios-cache-interceptor';
 const router: Router = express.Router();
 
@@ -44,7 +45,7 @@ router.post(
     try {
       const { id: id } = req.body;
       const [rows] = await promisePool.execute(
-        `SELECT stop_time, station_name, train_type ,train_number, station_longitude, station_latitude
+        `SELECT stop_time, station_name, train_type,train_number, station_longitude, station_latitude
       FROM traflix.TRAIN_SCHEDULE 
       JOIN traflix.STATION USING(station_id)
       JOIN traflix.TRAIN USING(train_id)
@@ -93,7 +94,9 @@ router.post(
         message: 'content info query success',
         data: returnData,
       });
-    } catch (err) {}
+    } catch (err) {
+      console.error(err);
+    }
 
     return res.status(HttpStatus.NOT_FOUND).json({
       status: HttpStatus.NOT_FOUND,
@@ -108,43 +111,37 @@ router.post(
   async (req: IGetUserAuthInfoRequest, res: Response) => {
     try {
       const userId = req.user!.userId;
-      // const [journeys] = await promisePool.execute(
-      //   `SELECT BIN_TO_UUID(journey_id,1) AS journey_id
-      // FROM JOURNEY JOIN USER USING(user_id)
-      // WHERE user_id = UUID_TO_BIN(\'${userId}\',1)`,
-      // );
+
       const [journeys] = await promisePool.execute(
-        `SELECT BIN_TO_UUID(journey_id,1) AS journey_id 
-      FROM JOURNEY JOIN USER USING(user_id)`,
+        `SELECT BIN_TO_UUID(journey_id, 1) AS journey_id 
+      FROM JOURNEY
+      WHERE JOURNEY.user_id = UUID_TO_BIN("${userId}", 1)`,
       );
 
       const promises = (journeys as any[]).map(async (journey) => {
-        // const [events] = await promisePool.execute(
-        //   `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date,
-        // schedule_order, is_train, content_id,
-        // BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id
-        // FROM JOURNEY JOIN EVENT USING (journey_id)
-        // WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
-        // ORDER BY schedule_order`,
-        // );
         const [events] = await promisePool.execute(
-          `SELECT DATE_FORMAT(journey_date,'%Y-%m-%d') AS journey_date, 
-          schedule_order, is_train, content_id, 
-          BIN_TO_UUID(train_schedule_id,1) AS train_schedule_id,
-          BIN_TO_UUID(station_id,1) AS station_id,
-          station_name,
-          station_longitude,
-          station_latitude,
-          BIN_TO_UUID(train_id,1) AS train_id,
-          train_type,
-          train_number,
-          stop_time
-          FROM JOURNEY 
-          JOIN EVENT USING (journey_id) 
-      LEFT OUTER JOIN TRAIN_SCHEDULE USING(train_schedule_id)
-          LEFT OUTER JOIN STATION USING(station_id)
-      LEFT OUTER JOIN TRAIN USING(train_id)
-          WHERE journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
+          `SELECT
+            DATE_FORMAT(J.journey_date,'%Y-%m-%d') AS journey_date, 
+            E.schedule_order,
+            E.is_train,
+            E.content_id,
+            SD.station_name AS departure_station_name,
+            SD.station_longitude AS departure_station_longitude,
+            SD.station_latitude AS departure_station_latitude,
+            TS.departure_time,
+            SA.station_name AS arrival_station_name,
+            SA.station_longitude AS arrival_station_longitude,
+            SA.station_latitude AS arrival_station_latitude,
+            TS.arrival_time,
+            T.train_type,
+            T.train_number
+          FROM traflix.JOURNEY J
+            JOIN traflix.EVENT E ON J.journey_id = E.journey_id
+            LEFT OUTER JOIN traflix.TRAIN_SCHEDULE TS ON E.train_schedule_id = TS.train_schedule_id
+            LEFT OUTER JOIN traflix.STATION SD ON SD.station_id = TS.departure_station_id
+            LEFT OUTER JOIN traflix.STATION SA ON SA.station_id = TS.arrival_station_id
+            LEFT OUTER JOIN traflix.TRAIN T ON T.train_id = TS.train_id
+          WHERE J.journey_id = UUID_TO_BIN(\'${journey.journey_id}\',1)
           ORDER BY schedule_order`,
         );
 
@@ -222,6 +219,7 @@ router.post(
     });
   },
 );
+
 router.post(
   '/findPath',
   authUnprotected,
@@ -535,6 +533,131 @@ router.post(
       status: HttpStatus.NOT_FOUND,
       message: 'fail load to station info',
     });
+  },
+);
+
+router.post(
+  '/saveJourney',
+  authProtected,
+  async (req: IGetUserAuthInfoRequest, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const { summaryData: summaryData, cardData: cardData } = req.body;
+      const journeyDate = summaryData.journeyDate;
+
+      const connection = await promisePool.getConnection();
+
+      // 출발역 uuid
+      const [departureStationRows] = await connection.execute(
+        `
+      SELECT BIN_TO_UUID(station_id, 1) AS station_id
+      FROM traflix.STATION
+      WHERE station_name = ?
+      `,
+        [summaryData.summaryData.at(0).place],
+      );
+      const departureStationId = (departureStationRows as any)[0].station_id;
+      console.log(departureStationId);
+
+      // 경유역 uuid
+      const [midStationRows] = await connection.execute(
+        `
+      SELECT BIN_TO_UUID(station_id, 1) AS station_id
+      FROM traflix.STATION
+      WHERE station_name = ?
+      `,
+        [summaryData.summaryData.at(1).place],
+      );
+      const midStationId = (midStationRows as any)[0].station_id;
+      console.log(midStationId);
+
+      // 도착역 uuid
+      const [arrivalStationRows] = await connection.execute(
+        `
+      SELECT BIN_TO_UUID(station_id, 1) AS station_id
+      FROM traflix.STATION
+      WHERE station_name = ?
+      `,
+        [summaryData.summaryData.at(-1).place],
+      );
+      const arrivalStationId = (arrivalStationRows as any)[0].station_id;
+      console.log(arrivalStationId);
+
+      const journeyId = uuidv4();
+      const [rows] = await connection.execute(
+        `
+        INSERT INTO traflix.JOURNEY
+        (journey_id, user_id, journey_date, journey_theme, arrival_station_id, departure_station_id)
+        VALUES (UUID_TO_BIN(?, 1), UUID_TO_BIN(?, 1), ?, ?, UUID_TO_BIN(?,1), UUID_TO_BIN(?,1))
+      `,
+        [
+          journeyId,
+          userId,
+          journeyDate,
+          {},
+          arrivalStationId,
+          departureStationId,
+        ],
+      );
+
+      var flag = false;
+
+      cardData.map(
+        async (
+          data: {
+            isTrain: boolean;
+            moreInfo: string;
+            trainNumber: number;
+            departureStation: string;
+            arrivalStation: string;
+            departureTime: string;
+            arrivalTime: string;
+          },
+          index: number,
+        ) => {
+          if (data.isTrain) {
+            const stationId = uuidv4();
+            const trainNumber = data.trainNumber;
+            const [trainRows] = await connection.execute(
+              `SELECT BIN_TO_UUID(train_id, 1) AS train_id FROM traflix.TRAIN WHERE train_number = ${trainNumber}`,
+            );
+            const trainId = (trainRows as any)[0].train_id;
+
+            if (flag) {
+              await connection.execute(
+                `INSERT INTO traflix.TRAIN_SCHEDULE (train_schedule_id, train_id, departure_station_id, arrival_station_id, departure_time, arrival_time) VALUES (UUID_TO_BIN("${stationId}", 1), UUID_TO_BIN("${trainId}", 1), UUID_TO_BIN("${midStationId}", 1), UUID_TO_BIN("${arrivalStationId}", 1), "${data.departureTime}", "${data.arrivalTime}")`,
+              );
+            } else {
+              flag = true;
+              await connection.execute(
+                `INSERT INTO traflix.TRAIN_SCHEDULE (train_schedule_id, train_id, departure_station_id, arrival_station_id, departure_time, arrival_time) VALUES (UUID_TO_BIN("${stationId}", 1), UUID_TO_BIN("${trainId}", 1), UUID_TO_BIN("${departureStationId}", 1), UUID_TO_BIN("${midStationId}", 1), "${data.departureTime}", "${data.arrivalTime}")`,
+              );
+            }
+            await connection.execute(
+              `INSERT INTO traflix.EVENT (user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id) VALUES (UUID_TO_BIN("${userId}", 1), UUID_TO_BIN("${journeyId}", 1), ${index}, 1, '${''}', UUID_TO_BIN("${stationId}", 1))`,
+            );
+          } else {
+            const [rows] = await connection.execute(
+              `INSERT INTO traflix.EVENT (user_id, journey_id, schedule_order, is_train, content_id, train_schedule_id) VALUES (UUID_TO_BIN("${userId}", 1), UUID_TO_BIN("${journeyId}", 1), ${index}, 0, "${
+                data.moreInfo
+              }", ${null})`,
+            );
+          }
+        },
+      );
+      connection.release();
+
+      return res.status(HttpStatus.CREATED).json({
+        status: HttpStatus.CREATED,
+        message: 'save journey query success',
+      });
+    } catch (err) {
+      console.log(err);
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'fail post to save journey',
+      });
+    }
   },
 );
 
