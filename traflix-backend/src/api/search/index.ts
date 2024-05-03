@@ -15,6 +15,9 @@ const router: Router = express.Router();
 
 const axios = setupCache(Axios);
 
+import { join } from 'path';
+import { spawn } from 'child_process';
+
 router.get(
   '/stationName',
   authUnprotected,
@@ -252,30 +255,98 @@ router.post(
       // 요일을 추출 (0: 일요일, 1: 월요일, ..., 6: 토요일)
       const daysOfWeek = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
       const dayOfWeek = daysOfWeek[date.getDay()];
-      const pathDataResponse = await axios.post(
-        `https://delvlhfpab.execute-api.ap-northeast-2.amazonaws.com/default/Traflix-findPath`,
-        {
-          Dep: stationCodeDep,
-          Arr: stationCodeArr,
-          Time: convertTime,
-          Day: dayOfWeek,
-          Weight: {
-            weight_type12: tasteList.includes('12') ? 1 : 0,
-            weight_type14: tasteList.includes('14') ? 1 : 0,
-            weight_type15: tasteList.includes('15') ? 1 : 0,
-            weight_type28: tasteList.includes('28') ? 1 : 0,
-            weight_type32: tasteList.includes('32') ? 1 : 0,
-            weight_type38: tasteList.includes('38') ? 1 : 0,
-            weight_type39: tasteList.includes('39') ? 1 : 0,
-          },
-        },
-      );
-      const content = pathDataResponse.data;
 
+      const pyFilePath = join(
+        process.cwd(),
+        '/src/api/search/pythonlibs/lambda_function.py',
+      );
+
+      console.log(process.cwd());
+      let output = '';
+      const test = {
+        Dep: stationCodeDep,
+        Arr: stationCodeArr,
+        Time: convertTime,
+        Day: dayOfWeek,
+        Weight: {
+          weight_type12: tasteList.includes('12') ? 1 : 0,
+          weight_type14: tasteList.includes('14') ? 1 : 0,
+          weight_type15: tasteList.includes('15') ? 1 : 0,
+          weight_type28: tasteList.includes('28') ? 1 : 0,
+          weight_type32: tasteList.includes('32') ? 1 : 0,
+          weight_type38: tasteList.includes('38') ? 1 : 0,
+          weight_type39: tasteList.includes('39') ? 1 : 0,
+        },
+      };
+      console.log(test);
+      const processDataPromise = new Promise((resolve, reject) => {
+        const pythonProcess = spawn('python3', [
+          pyFilePath,
+          stationCodeDep,
+          stationCodeArr,
+          convertTime,
+          dayOfWeek,
+          tasteList.includes('12') ? '1' : '0',
+          tasteList.includes('14') ? '1' : '0',
+          tasteList.includes('15') ? '1' : '0',
+          tasteList.includes('28') ? '1' : '0',
+          tasteList.includes('32') ? '1' : '0',
+          tasteList.includes('38') ? '1' : '0',
+          tasteList.includes('39') ? '1' : '0',
+        ]);
+
+        // 파이썬 프로세스 정상 처리
+        pythonProcess.stdout.on('data', (data) => {
+          output += data.toString();
+          console.log('파이썬 프로세스 출력값:', output);
+        });
+
+        // 파이썬 프로세스 오류 처리
+        pythonProcess.stderr.on('data', (data) => {
+          console.error('파이썬 프로세스 실행 중 오류 발생:', data.toString());
+          reject(data.toString());
+        });
+
+        // 파이썬 프로세스 종료 핸들링
+        pythonProcess.on('close', (code) => {
+          if (code === 0) {
+            console.log('파이썬 정상 종료!');
+            let parsedData = JSON.parse(output);
+            resolve(parsedData);
+          } else {
+            console.error(`파이썬 프로세스 비정상 종료! 코드: ${code}`);
+            reject(`파이썬 프로세스 비정상 종료`);
+          }
+        });
+      });
+
+      const promiseData = await processDataPromise;
+      console.log('파이썬 정상실행:', promiseData);
+
+      // const pathDataResponse = await axios.post(
+      //   `https://delvlhfpab.execute-api.ap-northeast-2.amazonaws.com/default/Traflix-findPath`,
+      //   {
+      //     Dep: stationCodeDep,
+      //     Arr: stationCodeArr,
+      //     Time: convertTime,
+      //     Day: dayOfWeek,
+      //     Weight: {
+      //       weight_type12: tasteList.includes('12') ? 1 : 0,
+      //       weight_type14: tasteList.includes('14') ? 1 : 0,
+      //       weight_type15: tasteList.includes('15') ? 1 : 0,
+      //       weight_type28: tasteList.includes('28') ? 1 : 0,
+      //       weight_type32: tasteList.includes('32') ? 1 : 0,
+      //       weight_type38: tasteList.includes('38') ? 1 : 0,
+      //       weight_type39: tasteList.includes('39') ? 1 : 0,
+      //     },
+      //   },
+      // );
+      // const content = pathDataResponse.data;
+      const content = promiseData;
       let result = [];
       for (let i = 0; i < 5; i++) {
-        const tourStationName = content.body[i].TourStation;
-        let pathArr = content.body[i].Path;
+        const tourStationName = (content as any).body[i].TourStation;
+        let pathArr = (content as any).body[i].Path;
         let train = [];
         for (let path of pathArr) {
           const [deptQ] = await promisePool.execute(
